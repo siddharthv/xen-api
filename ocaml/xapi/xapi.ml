@@ -57,7 +57,7 @@ open Db_cache_types
     The db connections must have been parsed from db.conf file and initialised before this fn is called.
     Also this function depends on being able to call API functions through the external interface.
 *)
-let start_database_engine () = debug "Sample Git";
+let start_database_engine () = debug "Verify XAPI ";
 	let schema = Datamodel_schema.of_datamodel () in
 	
 	(* If the temporary restore file is present then we must populate from that *)
