@@ -179,6 +179,27 @@ let checkpoint ~__context ~vm ~new_name =
 				(* Save the state of the vm *)
 				snapshot_info := Xapi_vm_clone.snapshot_info ~power_state ~is_a_snapshot:true;
 				(* suspend the VM *)
+                                (* Get all the VDI's except CD's *)
+				let vbds = Db.VM.get_VBDs ~__context ~self:vm in
+				let vbds = List.filter (fun x -> Db.VBD.get_type ~__context ~self:x <> `CD) vbds in
+				let vdis = List.map (fun self -> Db.VBD.get_VDI ~__context ~self) vbds in
+
+                                (* Get SR of each VDI *)
+				let vdi_sr = List.map (fun vdi -> Db.VDI.get_SR __~context ~self:vdi) vdis in
+                                let sr_type = List.map (fun self -> Db.SR.get_type ~__context ~self) vdi_sr in
+				
+				(* Check if SR has snapshot capability *)
+				let sr_has_snapshot_capability sr = 
+					if not (List.mem Smint.Vdi_snapshot (Sm.capabilities_of_driver sr)) then false
+					else true
+				in
+
+				List.iter
+				   (fun sr ->
+				      if not (sr_has_snapshot_capability sr)
+				      then raise (Api_errors.Server_error (Api_errors.vm_checkpoint_suspend_failed, [Ref.string_of vm])) )
+				   sr_type 
+
 				Xapi_xenops.suspend ~__context ~self:vm;
 			with
 				| Api_errors.Server_error(_, _) as e -> raise e
