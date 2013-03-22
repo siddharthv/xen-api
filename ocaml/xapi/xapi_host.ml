@@ -399,6 +399,7 @@ let compute_evacuation_plan ~__context ~host =
 		compute_evacuation_plan_no_wlb ~__context ~host
 
 let evacuate ~__context ~host =
+	debug "SS - A";
 	let task = Context.get_task_id __context in
 	begin
 		let plans = compute_evacuation_plan ~__context ~host in
@@ -410,12 +411,22 @@ let evacuate ~__context ~host =
 			plans;
 
 		(* Do it *)
+		let q = Queue.create () in
 		let individual_progress = 1.0 /. float (Hashtbl.length plans) in
 		let migrate_vm  vm plan = match plan with
 			| Migrate host ->
-				Helpers.call_api_functions ~__context
+				( try
+					(Helpers.call_api_functions ~__context
 					(fun rpc session_id -> Client.Client.VM.pool_migrate
-						~rpc ~session_id ~vm ~host ~options:[ "live", "true" ]);
+						~rpc ~session_id ~vm ~host ~options:[ "live", "true" ])) 
+					with
+					|(Api_errors.Server_error(code, params)) when code = Api_errors.vm_bad_power_state -> ();
+					|(Api_errors.Server_error(code, params)) when code = Api_errors.vm_missing_pv_drivers ->
+							debug "SS - PV Drivers not loaded";
+							Queue.add (vm, plan) q;
+							debug "SS - Queue Length: %d" (Queue.length q);
+					| _ -> ()
+				);
 				let progress = Db.Task.get_progress ~__context ~self:task in
 				TaskHelper.set_progress ~__context (progress +. individual_progress)
 			| Error(code, params) -> (* should never happen *)
@@ -423,7 +434,39 @@ let evacuate ~__context ~host =
 		in
 		let () = Hashtbl.iter migrate_vm plans in
 
-		(* Now check there are no VMs left *)
+		debug "SS - Queue Length: %d" (Queue.length q);
+		while not (Queue.is_empty q) do
+			let (vm, plan) = Queue.pop q in
+			debug "SS - VM:%s" (Ref.string_of vm);
+			match plan with
+			| Migrate host -> 
+				let rpc = Helpers.make_rpc ~__context in
+				let session_id = Context.get_session_id __context in
+				let classes = [ Printf.sprintf "VM/%s" (Ref.string_of vm) ] in
+				let timeout = 30.0 in
+				let rec wait_for_event ~token =
+					let open Event_types in
+					let event_from = Client.Client.Event.from ~rpc ~session_id ~classes ~token ~timeout |> event_from_of_rpc in
+					let records = List.map Event_helper.record_of_event event_from.events in
+					let valid = function
+						| Event_helper.VM (vm, Some vm_rec) ->
+								vm_rec.API.vM_guest_metrics <> Ref.null
+						| _ -> false in
+					if not (List.fold_left (||) false (List.map valid records))
+					then wait_for_event ~token:event_from.token in
+				let token = "" in
+				wait_for_event ~token;
+				(try
+				(Helpers.call_api_functions ~__context
+				(fun rpc session_id -> Client.Client.VM.pool_migrate
+					~rpc ~session_id ~vm:vm ~host ~options:[ "live", "true" ]))
+				with _ ->
+					debug "SS - Error";
+				);
+			|Error(code, params) -> (* should never happen *)
+				raise (Api_errors.Server_error(code, params))
+		done;
+
 		let vms = Db.Host.get_resident_VMs ~__context ~self:host in
 		let vms =
 			List.filter
