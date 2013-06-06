@@ -778,6 +778,7 @@ module VM = struct
 					| None -> () (* Domain doesn't exist so no setup required *)
 					| Some di ->
 						debug "VM %s exists with domid=%d; checking whether xenstore is intact" vm.Vm.id di.domid;
+						debug "SS - New VM Name = %s" vm.Vm.name;
 						(* Minimal set of keys and values expected by tools like xentop (CA-24231) *)
 						let minimal_local_kvs = [
 							"name", vm.Vm.name;
@@ -795,10 +796,14 @@ module VM = struct
 						] |> List.map (fun (k, v) -> Printf.sprintf "/vm/%s/%s" vm.Vm.id k, v) in
 						List.iter
 							(fun (k, v) ->
-								if try ignore(xs.Xs.read k); false with _ -> true then begin
+(*								if try ignore(xs.Xs.read k); false with _ -> true then begin*)
+								let key = xs.Xs.read k in
+								debug "SS - K: %s - V: %s" k v;
+									if (xs.Xs.read k) <> v then begin
 									debug "xenstore-write %s <- %s" k v;
 									xs.Xs.write k v
-								end
+									end
+(*								end*)
 							) (minimal_local_kvs @ minimal_vm_kvs)
 			)
 
