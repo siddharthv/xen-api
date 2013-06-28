@@ -533,6 +533,9 @@ let migrate_send'  ~__context ~vm ~dest ~live ~vdi_map ~vif_map ~options =
 				| Xenops_interface.Does_not_exist ("VM",_)
 				| Xenops_interface.Does_not_exist ("extra",_) ->
 					()	
+				| Xenops_interface.Cancelled(_) ->
+						
+						if TaskHelper.is_cancelling ~__context then TaskHelper.cancel ~__context;
 		end;
 
 		debug "Migration complete";
