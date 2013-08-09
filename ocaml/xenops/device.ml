@@ -1185,17 +1185,24 @@ let write_string_to_file file s =
 
 let do_flr device =
 	debug "Doing FLR on pci device: %s" device;
-	let doflr = "/sys/bus/pci/drivers/pciback/do_flr" in
-	let script = Filename.concat Fhs.libexecdir "pci-flr" in
-	let callscript s devstr =
-		if Sys.file_exists script then begin
-			try ignore (Forkhelpers.execute_command_get_output script [ s; devstr; ])
-			with _ -> ()
+	try
+		let device_reset_file = Printf.sprintf "/sys/bus/pci/devices/%s/reset" device in
+		write_string_to_file device_reset_file "1"
+	with _ ->
+		begin
+			debug "Unable to reset PCI device: %s by writing to device reset file" device;
+			let doflr = "/sys/bus/pci/drivers/pciback/do_flr" in
+			let script = Filename.concat Fhs.libexecdir "pci-flr" in
+			let callscript s devstr =
+				if Sys.file_exists script then begin
+					try ignore (Forkhelpers.execute_command_get_output script [ s; devstr; ])
+					with _ -> ()
+				end
+			in
+			callscript "flr-pre" device;
+			( try write_string_to_file doflr device with _ -> (); );
+			callscript "flr-post" device
 		end
-	in
-	callscript "flr-pre" device;
-	( try write_string_to_file doflr device with _ -> (); );
-	callscript "flr-post" device
 
 let bind pcidevs =
 	let bind_to_pciback device =
