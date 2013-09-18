@@ -144,31 +144,34 @@ let exec_command req cmd s session args =
 		else false in
 	let u = try List.assoc "username" params with _ -> "" in
 	let p = try List.assoc "password" params with _ -> "" in
+	let get_plugin = List.assoc "plugin" params in
+	debug "SS - Plugin(Name): %s" get_plugin;
 	(* Before we log, hide the values of any keys which might be sensitive. *)
-	let param_keys_to_hide = [
-		"config:pass"; (* AD authentication password. *)
-		"remote-password"; (* Cross-pool migration remote XS password. *)
-		"password"; (* Local XS password. *)
+	let commands_and_params_to_hide = [
+		"user-password-change", ["old"; "value"];
+		"secret-create", ["value"];
+		"secret-param-set", ["value"];
+		"vm-migrate", ["remote-password"];
+		"sr-create", ["device-config-chappassword"];
+		"pool-enable-external-auth", ["config:pass"];
 	] in
-	let params = List.fold_left
-		(fun acc param ->
-			if List.mem_assoc param acc
-			then List.replace_assoc param "null" acc
-			else acc)
-		params param_keys_to_hide in
 	let rpc = Helpers.get_rpc () req s in
 	Cli_frontend.populate_cmdtable rpc Ref.null;
 	(* Log the actual CLI command to help diagnose failures like CA-25516 *)
 	let cmd_name = get_cmdname cmd in
+	debug "SS - CMD: %s" cmd_name;
 	if cmd_name = "help" then do_help cmd minimal s
 	else
 		let uninteresting =
 			List.exists
 				(fun k -> String.endswith k cmd_name) uninteresting_cmd_postfixes in
 		let do_log = if uninteresting then debug else info in
-		if String.startswith "secret-" cmd_name
-		then
-			do_log "xe %s %s" cmd_name (String.concat " " (List.map (fun (k, v) -> let v' = if k = "value" then "(omitted)" else v in k ^ "=" ^ v') params))
+		if List.mem_assoc cmd_name commands_and_params_to_hide
+		then begin
+			debug "SS - ParamsL %d" (List.length (List.assoc cmd_name commands_and_params_to_hide));
+			let params_to_hide = List.assoc cmd_name commands_and_params_to_hide @ ["password"] in
+			do_log "xe %s %s" cmd_name (String.concat " " (List.map (fun (k, v) -> let v' = if List.mem k params_to_hide then "(omitted)" else v in k ^ "=" ^ v') params))
+		end
 		else
 			do_log "xe %s %s" cmd_name (String.concat " " (List.map (fun (k, v) -> k ^ "=" ^ v) params));
 		do_rpcs req s u p minimal cmd session args
