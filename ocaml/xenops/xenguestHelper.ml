@@ -18,9 +18,6 @@ open Xenops_task
 module D = Debug.Debugger(struct let name = "xenguesthelper" end)
 open D
 
-(** Where to place the last xenguesthelper debug log (just in case) *)
-let last_log_file = "/tmp/xenguesthelper-log"
-
 (* Exceptions which may propagate from the xenguest binary *)
 exception Xenctrl_dom_allocate_failure of int * string
 exception Xenctrl_dom_linux_build_failure of int * string
@@ -43,7 +40,8 @@ let connect path domid (args: string list) (fds: (string * Unix.file_descr) list
 
 	let using_xiu = false in 
 
-	let last_log_file = Printf.sprintf "/tmp/xenguest.%d.log" domid in
+(** Move the last xenguesthelper debug log to xensource.log *)
+	let last_log_file = Printf.sprintf "/var/log/xensource.log" in
 
 	let slave_to_server_w_uuid = Uuid.to_string (Uuid.make_uuid ()) in
 	let server_to_slave_r_uuid = Uuid.to_string (Uuid.make_uuid ()) in
