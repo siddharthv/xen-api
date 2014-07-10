@@ -378,6 +378,10 @@ let update_netdev doms =
 (* disk related code                                 *)
 (*****************************************************)
 
+type blktap3_metric_kind = 
+	| Read
+	| Write
+
 let update_vbds doms =
 	let read_int_file file =
 		let v = ref 0L in
@@ -396,17 +400,25 @@ let update_vbds doms =
 	in
 
 	let read_shm_stats_line line =
-		let vals = ref (0L, 0L, 0L, 0L, 0L, 0L, 0L) in
 			try
 				Scanf.sscanf line "%Ld %Ld %Ld %Ld %Ld %Ld %Ld"
-					(fun a b c d e f g -> vals := (a, b, c, d, e, f, g));
-				!vals
-			with _ -> !vals
+					(fun a b c d e f g -> (a, b, c, d, e, f, g))
+			with _ -> (0L, 0L, 0L, 0L, 0L, 0L, 0L)
 	in
 
 	let get_latency_metrics line rdwr =
 		let vals = ref (0L, 0L, 0L) in
 			try
+(*				match rdwr with
+				| `Read ->
+						Scanf.sscanf line "read requests: %Ld, avg usecs: %Ld, max usecs: %Ld"
+							(fun a b c -> (a, b, c))
+				| `Write ->
+						Scanf.sscanf line "write requests: %Ld, avg usecs: %Ld, max usecs: %Ld"
+							(fun a b c -> (a, b, c))
+			with _ -> (0L, 0L, 0L)
+	in
+i*)
 				if rdwr == "read" then
 					begin
 						Scanf.sscanf line "read requests: %Ld, avg usecs: %Ld, max usecs: %Ld"
@@ -421,6 +433,38 @@ let update_vbds doms =
 					end
 			with _ -> !vals
 	in
+
+	let produce_rrds vbd acc devid domid wr_bytes rd_bytes rd_avg_usecs wr_avg_usecs =
+		let open Device_number in
+		let device_name = devid |> of_xenstore_key |> to_linux_device in
+		let vbd_name = Printf.sprintf "vbd_%s" device_name in
+		(* If blktap fails to cleanup then we might find a backend domid which doesn't
+			 correspond to an active domain uuid. Skip these for now. *)
+		let newacc =
+			try
+				let uuid = uuid_of_domid doms domid in
+				(VM uuid, ds_make ~name:(vbd_name^"_write")
+					~description:("Writes to device '"^device_name^"' in bytes per second")
+					~value:(Rrd.VT_Int64 wr_bytes) ~ty:Rrd.Derive ~min:0.0 ~default:true
+					~units:"B/s" ())::
+				(VM uuid, ds_make ~name:(vbd_name^"_read")
+					~description:("Reads from device '"^device_name^"' in bytes per second")
+					~value:(Rrd.VT_Int64 rd_bytes) ~ty:Rrd.Derive ~min:0.0 ~default:true
+					~units:"B/s" ())::
+				(VM uuid, ds_make ~name:(vbd_name^"_read_latency")
+					~description:("Reads from device '" ^ device_name ^ "' in microseconds")
+					~units:"μs" ~value:(Rrd.VT_Int64 rd_avg_usecs)
+					~ty:Rrd.Gauge ~min:0.0 ~default:false ())::
+				(VM uuid, ds_make ~name:(vbd_name^"_write_latency")
+					~description:("Reads from device '" ^ device_name ^ "' in microseconds")
+					~value:(Rrd.VT_Int64 wr_avg_usecs) ~ty:Rrd.Gauge ~min:0.0
+					~default:false ~units:"μs" ())::
+				acc
+			with _ -> acc
+		in
+		newacc
+	in
+
 
 	let shm_devices_dir = "/dev/shm" in
 	let shm_dirs = Array.to_list (Sys.readdir shm_devices_dir) in
@@ -492,34 +536,7 @@ let update_vbds doms =
 				if istap then Scanf.sscanf vbd "tap-%d-%d" (fun id devid -> (id, devid))
 				else Scanf.sscanf vbd "vbd-%d-%d" (fun id devid -> (id, devid))
 			in
-			let open Device_number in
-			let device_name = devid |> of_xenstore_key |> to_linux_device in
-			let vbd_name = Printf.sprintf "vbd_%s" device_name in
-			(* If blktap fails to cleanup then we might find a backend domid which doesn't
-				 correspond to an active domain uuid. Skip these for now. *)
-			let newacc =
-				try
-					let uuid = uuid_of_domid doms domid in
-					(VM uuid, ds_make ~name:(vbd_name^"_write")
-						~description:("Writes to device '"^device_name^"' in bytes per second")
-						~value:(Rrd.VT_Int64 wr_bytes) ~ty:Rrd.Derive ~min:0.0 ~default:true
-						~units:"B/s" ())::
-					(VM uuid, ds_make ~name:(vbd_name^"_read")
-						~description:("Reads from device '"^device_name^"' in bytes per second")
-						~value:(Rrd.VT_Int64 rd_bytes) ~ty:Rrd.Derive ~min:0.0 ~default:true
-						~units:"B/s" ())::
-					(VM uuid, ds_make ~name:(vbd_name^"_read_latency")
-						~description:("Reads from device '" ^ device_name ^ "' in microseconds")
-						~units:"μs" ~value:(Rrd.VT_Int64 rd_avg_usecs)
-						~ty:Rrd.Gauge ~min:0.0 ~default:false ())::
-					(VM uuid, ds_make ~name:(vbd_name^"_write_latency")
-						~description:("Reads from device '" ^ device_name ^ "' in microseconds")
-						~value:(Rrd.VT_Int64 wr_avg_usecs) ~ty:Rrd.Gauge ~min:0.0
-						~default:false ~units:"μs" ())::
-					acc
-				with _ -> acc
-			in
-			newacc
+			produce_rrds vbd acc devid domid rd_bytes wr_bytes rd_avg_usecs wr_avg_usecs
 		) [] vbds
 
 (*****************************************************)
