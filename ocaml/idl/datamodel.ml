@@ -4912,6 +4912,7 @@ let pif_metrics =
 	field ~qualifier:DynamicRO ~ty:String "device_id" "Report device ID";
 	field ~qualifier:DynamicRO ~ty:String "device_name" "Report device name";
 	field ~qualifier:DynamicRO ~ty:Int "speed" "Speed of the link (if available)";
+	field ~qualifier:DynamicRO ~ty:Bool "fcoe_supported" "Report fcoe support";
 	field ~qualifier:DynamicRO ~ty:Bool "duplex" "Full duplex capability of the link (if available)";
 	field ~qualifier:DynamicRO ~ty:String "pci_bus_path" "PCI bus path of the pif (if available)";
 	field ~qualifier:DynamicRO ~ty:DateTime "last_updated" "Time at which this information was last updated";

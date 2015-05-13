@@ -287,6 +287,7 @@ let pif_record rpc session_id pif =
 	make_field ~name:"device-id" ~get:(fun () -> default nid (may (fun m -> m.API.pIF_metrics_device_id) (xm ()))) ();
 	make_field ~name:"device-name" ~get:(fun () -> default nid (may (fun m -> m.API.pIF_metrics_device_name) (xm ()))) ();
 	make_field ~name:"speed" ~get:(fun () -> default nid (may (fun m -> (Int64.to_string m.API.pIF_metrics_speed) ^ " Mbit/s") (xm ()))) ();
+	make_field ~name:"fcoe-supported" ~get:(fun () -> default nid (may (fun m -> string_of_bool m.API.pIF_metrics_fcoe_supported) (xm ()))) ();
 	make_field ~name:"duplex" ~get:(fun () -> default nid (may (fun m ->
 		if m.API.pIF_metrics_duplex then
 			"full"

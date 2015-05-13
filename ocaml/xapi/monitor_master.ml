@@ -167,7 +167,7 @@ let get_pciids vendor device =
 	(match d with None -> "" | Some x -> x)
 
 let set_pif_metrics ~__context ~self ~vendor ~device ~carrier ~speed ~duplex
-		~pcibuspath ~io_write ~io_read pmr =
+		~pcibuspath ~io_write ~io_read ~fcoe_supported pmr =
 	(* don't update & and reread pciids if db already contains same value *)
 	if pmr.API.pIF_metrics_vendor_id <> vendor
 	|| pmr.API.pIF_metrics_device_id <> device then (
@@ -185,6 +185,8 @@ let set_pif_metrics ~__context ~self ~vendor ~device ~carrier ~speed ~duplex
 		Db.PIF_metrics.set_duplex ~__context ~self ~value:duplex;
 	if pmr.API.pIF_metrics_pci_bus_path <> pcibuspath then
 		Db.PIF_metrics.set_pci_bus_path ~__context ~self ~value:pcibuspath;
+	if pmr.API.pIF_metrics_fcoe_supported <> fcoe_supported then
+		Db.PIF_metrics.set_fcoe_supported ~__context ~self ~value:fcoe_supported;
 	if io_write >= 0.0 then
 		Db.PIF_metrics.set_io_write_kbs ~__context ~self ~value:io_write;
 	if io_read >= 0.0 then
@@ -259,7 +261,7 @@ let update_pifs ~__context host pifs =
 					let ref = Ref.make() in
 					Db.PIF_metrics.create ~__context ~ref ~uuid:(Uuid.to_string (Uuid.make_uuid ())) ~carrier:false
 						~device_name:"" ~vendor_name:"" ~device_id:"" ~vendor_id:""
-						~speed:0L ~duplex:false ~pci_bus_path:""
+						~speed:0L ~duplex:false ~pci_bus_path:"" ~fcoe_supported:false
 						~io_read_kbs:0. ~io_write_kbs:0. ~last_updated:(Date.of_float 0.)
 						~other_config:[];
 					Db.PIF.set_metrics ~__context ~self:pifdev ~value:ref;
@@ -267,8 +269,18 @@ let update_pifs ~__context host pifs =
 				end
 			in
 			let pmr = Db.PIF_metrics.get_record ~__context ~self:metrics in
+			let fcoe_supported =
+				let device_interface = Db.PIF.get_device ~__context ~self:pifdev in
+				let dbg = Context.string_of_task __context in
+				if Net.Interface.is_fcoe_supported dbg device_interface = true then begin
+					debug "FCoE is supported on device %s" device_interface;
+					true
+				end
+				else
+					false
+			in
 			set_pif_metrics ~__context ~self:metrics ~vendor ~device ~carrier ~speed:speed ~duplex:duplex
-				~pcibuspath ~io_write:pif_stats.pif_tx ~io_read:pif_stats.pif_rx pmr;
+				~pcibuspath ~fcoe_supported:fcoe_supported ~io_write:pif_stats.pif_tx ~io_read:pif_stats.pif_rx pmr;
 		with Not_found -> () end
 	) db_pifs
 
